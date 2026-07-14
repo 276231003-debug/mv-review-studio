@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MV Review Studio</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">MV</div>
+          <div>
+            <p class="eyebrow">AI Video Evaluation</p>
+            <h1>MV Review Studio</h1>
+          </div>
+        </div>
+        <nav class="view-switch" aria-label="页面切换">
+          <button class="view-tab is-active" type="button" data-view-target="studio">评估台</button>
+          <button class="view-tab" type="button" data-view-target="standards">评估标准</button>
+          <button class="view-tab" type="button" data-view-target="report">报告页</button>
+        </nav>
+      </header>
+
+      <main>
+        <section class="view-panel is-active" data-view="studio" aria-labelledby="studio-title">
+          <div class="studio-layout">
+            <section class="upload-surface" aria-labelledby="studio-title">
+              <div class="section-heading">
+                <p class="eyebrow">Review Workspace</p>
+                <h2 id="studio-title">视频评估台</h2>
+              </div>
+
+              <label class="dropzone" id="dropzone">
+                <input id="videoInput" type="file" accept="video/mp4" />
+                <span class="upload-icon" aria-hidden="true"></span>
+                <strong>上传 MP4</strong>
+                <small id="dropHint">选择或拖入待评估 MV</small>
+              </label>
+
+              <label class="video-link-field">
+                <span>视频链接（可选）</span>
+                <input id="videoUrl" type="url" placeholder="粘贴可在线播放的视频地址，例如 https://.../video.mp4" />
+              </label>
+
+              <div class="video-stage" id="videoStage">
+                <img class="studio-art" src="assets/studio-frame.png" alt="" />
+                <video id="videoPreview" controls playsinline></video>
+                <div class="empty-state" id="emptyState">
+                  <span>暂无视频</span>
+                </div>
+              </div>
+
+              <section class="asset-panel" aria-labelledby="asset-title">
+                <div class="section-heading compact">
+                  <p class="eyebrow">Reference Assets</p>
+                  <h2 id="asset-title">素材与分镜</h2>
+                </div>
+                <div class="asset-grid">
+                  <label class="wide-field">
+                    <span>用户 Prompt（非必填）</span>
+                    <textarea id="userPrompt" rows="4" placeholder="填写用户输入的情绪、角色、场景、故事或画面要求"></textarea>
+                  </label>
+                  <label>
+                    <span>形象上传（地址或图片，可多行）</span>
+                    <textarea id="characterUrls" rows="4" data-preview-target="characterPreview" placeholder="https://.../character-1.png&#10;https://.../character-2.jpg"></textarea>
+                    <input id="characterFiles" class="asset-file-input" type="file" accept="image/*" multiple data-file-preview-target="characterPreview" />
+                  </label>
+                  <label>
+                    <span>背景上传（地址或图片）</span>
+                    <textarea id="backgroundUrls" rows="4" data-preview-target="backgroundPreview" placeholder="https://.../background.png"></textarea>
+                    <input id="backgroundFiles" class="asset-file-input" type="file" accept="image/*" data-file-preview-target="backgroundPreview" />
+                  </label>
+                  <label>
+                    <span>风格上传（地址或图片）</span>
+                    <textarea id="styleUrls" rows="4" data-preview-target="stylePreview" placeholder="https://.../style-reference.jpg"></textarea>
+                    <input id="styleFiles" class="asset-file-input" type="file" accept="image/*" data-file-preview-target="stylePreview" />
+                  </label>
+                  <label>
+                    <span>分镜图上传（地址或图片，可多行）</span>
+                    <textarea id="storyboardUrls" rows="4" data-preview-target="storyboardPreview" placeholder="https://.../shot-01.png&#10;https://.../shot-02.png"></textarea>
+                    <input id="storyboardFiles" class="asset-file-input" type="file" accept="image/*" multiple data-file-preview-target="storyboardPreview" />
+                  </label>
+                </div>
+                <div class="preview-groups" aria-label="素材预览">
+                  <div>
+                    <h3>形象</h3>
+                    <div class="image-preview" id="characterPreview"></div>
+                  </div>
+                  <div>
+                    <h3>背景</h3>
+                    <div class="image-preview" id="backgroundPreview"></div>
+                  </div>
+                  <div>
+                    <h3>风格</h3>
+                    <div class="image-preview" id="stylePreview"></div>
+                  </div>
+                  <div>
+                    <h3>分镜图</h3>
+                    <div class="image-preview storyboard-preview" id="storyboardPreview"></div>
+                  </div>
+                </div>
+              </section>
+            </section>
+
+            <aside class="review-panel" aria-labelledby="settings-title">
+              <div class="section-heading compact">
+                <p class="eyebrow">Evaluation Brief</p>
+                <h2 id="settings-title">评估信息</h2>
+              </div>
+
+              <div class="form-grid">
+                <label>
+                  <span>MV 标题</span>
+                  <input id="videoTitle" type="text" placeholder="例如：Neon Memory" />
+                </label>
+                <label>
+                  <span>艺人 / 团队</span>
+                  <input id="artistName" type="text" placeholder="例如：Luna" />
+                </label>
+                <label>
+                  <span>MV 类型</span>
+                  <select id="creativeStyle">
+                    <option value="narrative">叙事型</option>
+                    <option value="atmosphere">氛围型</option>
+                    <option value="performance">表演型</option>
+                    <option value="concept">概念型</option>
+                  </select>
+                </label>
+                <label class="wide-field">
+                  <span>歌词（非必填）</span>
+                  <textarea id="lyricsText" rows="5" placeholder="可填写歌词或关键歌词段落，用于分镜图的歌词呼应度评估"></textarea>
+                </label>
+              </div>
+
+              <fieldset class="review-switches">
+                <legend>跳过规则</legend>
+                <label>
+                  <input id="hasLipSync" type="checkbox" checked />
+                  <span>包含对口型镜头</span>
+                </label>
+                <label>
+                  <input id="hasLyrics" type="checkbox" checked />
+                  <span>视频中有歌词字幕展示</span>
+                </label>
+              </fieldset>
+
+              <dl class="file-facts" aria-label="视频信息">
+                <div>
+                  <dt>文件</dt>
+                  <dd id="factName">未上传</dd>
+                </div>
+                <div>
+                  <dt>时长</dt>
+                  <dd id="factDuration">--</dd>
+                </div>
+                <div>
+                  <dt>大小</dt>
+                  <dd id="factSize">--</dd>
+                </div>
+                <div>
+                  <dt>状态</dt>
+                  <dd id="factStatus">待评估</dd>
+                </div>
+              </dl>
+
+              <button class="primary-action" id="runReview" type="button" disabled>
+                <span class="play-symbol" aria-hidden="true"></span>
+                AI 评分
+              </button>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view-panel" data-view="standards" aria-labelledby="standards-title">
+          <div class="standards-layout">
+            <header class="standards-hero">
+              <div>
+                <p class="eyebrow">Kunlun MV Standard</p>
+                <h2 id="standards-title">MV 质量评估体系</h2>
+                <p class="report-subtitle">当前系统按两组独立评估：分镜图质量评估、视频质量评估。任一维度不通过只影响所在组，报告仅展示“不通过 / 通过 / 优秀 / N/A”档位。</p>
+              </div>
+              <div class="level-stack" aria-label="评分档位">
+                <span>不通过 X</span>
+                <span>通过 ✓</span>
+                <span>优秀 ★</span>
+                <span>N/A</span>
+              </div>
+            </header>
+            <div class="standards-grid" id="standardsList"></div>
+          </div>
+        </section>
+
+        <section class="view-panel" data-view="report" aria-labelledby="report-title">
+          <div class="report-layout">
+            <header class="report-hero">
+              <div>
+                <p class="eyebrow">AI Review Report</p>
+                <h2 id="report-title">评估报告</h2>
+                <p class="report-subtitle" id="reportSubtitle">上传视频或填写分镜图地址后生成报告。</p>
+              </div>
+              <div class="score-dial" aria-label="独立评估状态">
+                <span id="overallScore">分别</span>
+                <small id="overallLevel">独立评估</small>
+              </div>
+            </header>
+
+            <section class="result-summary" aria-label="评估总览">
+              <article>
+                <p class="eyebrow">Video Result</p>
+                <h3>完整视频</h3>
+                <strong id="videoOverallLevel">N/A</strong>
+              </article>
+              <article>
+                <p class="eyebrow">Storyboard Result</p>
+                <h3>分镜图</h3>
+                <strong id="storyboardOverallLevel">N/A</strong>
+              </article>
+            </section>
+
+            <div class="report-grid">
+              <section class="score-section" aria-labelledby="video-score-title">
+                <div class="section-heading compact">
+                  <p class="eyebrow">Complete Video Standard</p>
+                  <h3 id="video-score-title">完整视频维度</h3>
+                </div>
+                <div class="metric-list" id="metricList"></div>
+              </section>
+
+              <section class="score-section" aria-labelledby="storyboard-score-title">
+                <div class="section-heading compact">
+                  <p class="eyebrow">Storyboard Standard</p>
+                  <h3 id="storyboard-score-title">分镜图维度</h3>
+                </div>
+                <div class="metric-list" id="storyboardMetricList"></div>
+              </section>
+
+              <section class="insight-section" aria-labelledby="insight-title">
+                <div class="section-heading compact">
+                  <p class="eyebrow">Creative Diagnosis</p>
+                  <h3 id="insight-title">AI 诊断</h3>
+                </div>
+                <div class="insight-columns">
+                  <div>
+                    <h4>优势</h4>
+                    <ul id="strengthList"></ul>
+                  </div>
+                  <div>
+                    <h4>风险</h4>
+                    <ul id="riskList"></ul>
+                  </div>
+                </div>
+              </section>
+
+              <section class="standard-hit-section" aria-labelledby="standard-hit-title">
+                <div class="section-heading compact">
+                  <p class="eyebrow">Rule Mapping</p>
+                  <h3 id="standard-hit-title">标准命中</h3>
+                </div>
+                <div class="standard-hit-list" id="standardHitList"></div>
+              </section>
+
+              <section class="recommend-section" aria-labelledby="recommend-title">
+                <div class="section-heading compact">
+                  <p class="eyebrow">Action Plan</p>
+                  <h3 id="recommend-title">优化建议</h3>
+                </div>
+                <ol id="recommendList"></ol>
+              </section>
+
+              <section class="timeline-section" aria-labelledby="timeline-title">
+                <div class="section-heading compact">
+                  <p class="eyebrow">Attention Map</p>
+                  <h3 id="timeline-title">节奏节点</h3>
+                </div>
+                <div class="timeline" id="timelineList"></div>
+              </section>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
