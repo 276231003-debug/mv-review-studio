@@ -33,10 +33,10 @@ const completeVideoStandards = [
     key: "continuity",
     layer: "完整视频评估",
     label: "跨分镜统一性",
-    question: "不同分镜片段之间人物形象、背景风格、构图语言是否保持一致。",
-    fail: "出现明显人物/风格/画面突变，或整体像多个不同视频拼接。",
-    pass: "多数片段保持人物、风格、构图语言一致，少数瑕疵不影响整体观感。",
-    excellent: "全片人物、风格、构图和景别意识高度统一，几乎没有割裂感。"
+    question: "不同分镜片段之间人物数量、性别、身份、服装、发型、背景风格和构图语言是否保持一致。",
+    fail: "出现明显人物数量/性别/身份变化、主角替换、服装发型突变或背景风格断裂，整体像多个不同视频拼接。",
+    pass: "主要人物组合、身份和风格基本一致，仅有轻微造型或画面差异，不影响连续观看。",
+    excellent: "全片人物数量、身份、造型、风格、构图和景别意识高度统一，几乎没有割裂感。"
   },
   {
     key: "transition",
@@ -219,6 +219,7 @@ const els = {
   artist: document.getElementById("artistName"),
   style: document.getElementById("creativeStyle"),
   lyrics: document.getElementById("lyricsText"),
+  continuityNotes: document.getElementById("continuityNotes"),
   hasLipSync: document.getElementById("hasLipSync"),
   hasLyrics: document.getElementById("hasLyrics"),
   userPrompt: document.getElementById("userPrompt"),
@@ -314,7 +315,7 @@ function wireEvents() {
     });
   });
 
-  [els.userPrompt, els.title, els.artist, els.style, els.lyrics, els.hasLipSync, els.hasLyrics].forEach((control) => {
+  [els.userPrompt, els.title, els.artist, els.style, els.lyrics, els.continuityNotes, els.hasLipSync, els.hasLyrics].forEach((control) => {
     control.addEventListener("input", updateRunState);
     control.addEventListener("change", updateRunState);
   });
@@ -424,6 +425,7 @@ function buildReport() {
     videoUrl: state.videoUrl ? [state.videoUrl, Math.round(state.duration)] : [],
     prompt: inputs.prompt,
     lyrics: inputs.lyrics,
+    continuityNotes: inputs.continuityNotes,
     storyboard: inputs.storyboardAssets,
     style: els.style.value
   }));
@@ -464,6 +466,14 @@ function evaluateVideo(seed, inputs) {
     if (standard.skipWhen && skipState[standard.skipWhen]) {
       return evaluationFromStandard(standard, "N/A", standard.skipText, null);
     }
+    if (standard.key === "continuity" && hasContinuityIssue(inputs.continuityNotes)) {
+      return evaluationFromStandard(
+        standard,
+        "不通过 X",
+        `主体一致性核查已标注异常：${inputs.continuityNotes}。人物数量、性别或身份发生变化时，跨分镜统一性应直接判为不通过。`,
+        45
+      );
+    }
     const rawScore = videoScoreFor(standard.key, seed, index, inputs);
     const level = levelFromScore(rawScore);
     return evaluationFromStandard(standard, level, copyForLevel(standard, level), rawScore);
@@ -492,12 +502,16 @@ function videoScoreFor(key, seed, index, inputs) {
   const referenceBonus = Math.min(5, inputs.characterAssets.length + inputs.backgroundAssets.length + inputs.styleAssets.length);
   const variation = ((seed >> (index * 2)) % 17) - 8;
   const styleMap = {
-    narrative: { story: 7, musicContent: 4, continuity: 3 },
+    narrative: { story: 7, musicContent: 4 },
     atmosphere: { cameraLanguage: 5, rhythm: 4, beatSync: 3 },
     performance: { lipSync: 6, singingCompleteness: 5, beatSync: 5, lyricTiming: 4 },
-    concept: { cameraLanguage: 6, continuity: 4, clarity: 3 }
+    concept: { cameraLanguage: 6, clarity: 3 }
   };
   const styleBonus = styleMap[els.style.value]?.[key] || 0;
+  if (key === "continuity") {
+    const continuityEvidenceBonus = Math.min(6, inputs.characterAssets.length * 2 + (inputs.prompt.length >= 20 ? 2 : 0));
+    return clampHiddenScore(56 + continuityEvidenceBonus + variation);
+  }
   return clampHiddenScore(66 + durationFit + promptBonus + referenceBonus + styleBonus + variation);
 }
 
@@ -645,6 +659,7 @@ function getInputs() {
   return {
     prompt: els.userPrompt.value.trim(),
     lyrics: els.lyrics.value.trim(),
+    continuityNotes: els.continuityNotes.value.trim(),
     characterUrls,
     backgroundUrls,
     styleUrls,
@@ -658,6 +673,13 @@ function getInputs() {
     styleAssets: [...styleUrls, ...state.assetObjectUrls.style],
     storyboardAssets: [...storyboardUrls, ...state.assetObjectUrls.storyboard]
   };
+}
+
+function hasContinuityIssue(value) {
+  const text = value.trim();
+  if (!text) return false;
+  const issuePattern = /(变成|变为|变了|换成|替换|不一致|不统一|突变|消失|少了|多了|男.*女|女.*男|两男一女|三男|三个男|两个男|一女|人数|数量|性别|身份|主角|服装|发型)/;
+  return issuePattern.test(text);
 }
 
 function updateAssetFiles(input) {
