@@ -2,15 +2,26 @@ const state = {
   file: null,
   videoUrl: "",
   objectUrl: "",
+  videoWidth: 0,
+  videoHeight: 0,
   assetObjectUrls: {
     character: [],
     background: [],
     style: [],
     storyboard: []
   },
+  assetFileNames: {
+    character: [],
+    background: [],
+    style: [],
+    storyboard: []
+  },
   duration: 0,
+  history: [],
   report: null
 };
+
+const historyStorageKey = "mv-review-studio-history-v1";
 
 const levelRank = {
   "不通过 X": 0,
@@ -24,10 +35,10 @@ const completeVideoStandards = [
     key: "clarity",
     layer: "完整视频评估",
     label: "清晰度",
-    question: "画面是否清晰稳定，主体、面部、字幕和关键动作是否可辨认。",
-    fail: "主体或面部经常糊化，压缩、噪点或抖动明显，影响观看与信息识别。",
-    pass: "主体和关键动作基本清晰，少量压缩或轻微模糊不影响整体观看。",
-    excellent: "全片清晰稳定，主体细节、字幕和关键动作都能被准确识别。"
+    question: "画面分辨率和观感是否清晰稳定，主体、面部、字幕和关键动作是否可辨认。",
+    fail: "低于 720p，或虽为 720p 但主体/面部/字幕经常糊化，压缩噪点、拖影或抖动明显，影响观看与信息识别。",
+    pass: "720p 及以上且主体、面部、字幕和关键动作基本清晰，少量压缩或轻微模糊不影响整体观看。",
+    excellent: "1080p 及以上且全片清晰稳定，主体细节、字幕和关键动作都能被准确识别，几乎没有压缩噪点或抖动。"
   },
   {
     key: "continuity",
@@ -219,7 +230,6 @@ const els = {
   artist: document.getElementById("artistName"),
   style: document.getElementById("creativeStyle"),
   lyrics: document.getElementById("lyricsText"),
-  continuityNotes: document.getElementById("continuityNotes"),
   hasLipSync: document.getElementById("hasLipSync"),
   hasLyrics: document.getElementById("hasLyrics"),
   userPrompt: document.getElementById("userPrompt"),
@@ -234,6 +244,7 @@ const els = {
   factName: document.getElementById("factName"),
   factDuration: document.getElementById("factDuration"),
   factSize: document.getElementById("factSize"),
+  factResolution: document.getElementById("factResolution"),
   factStatus: document.getElementById("factStatus"),
   subtitle: document.getElementById("reportSubtitle"),
   overall: document.getElementById("overallScore"),
@@ -247,10 +258,15 @@ const els = {
   recommendList: document.getElementById("recommendList"),
   timelineList: document.getElementById("timelineList"),
   standardsList: document.getElementById("standardsList"),
-  standardHitList: document.getElementById("standardHitList")
+  standardHitList: document.getElementById("standardHitList"),
+  historyList: document.getElementById("historyList"),
+  downloadHistory: document.getElementById("downloadHistory"),
+  clearHistory: document.getElementById("clearHistory")
 };
 
+state.history = loadHistory();
 renderStandards();
+renderHistory();
 wireEvents();
 updateRunState();
 
@@ -290,7 +306,10 @@ function wireEvents() {
 
   els.preview.addEventListener("loadedmetadata", () => {
     state.duration = Number.isFinite(els.preview.duration) ? els.preview.duration : 0;
+    state.videoWidth = els.preview.videoWidth || 0;
+    state.videoHeight = els.preview.videoHeight || 0;
     els.factDuration.textContent = formatDuration(state.duration);
+    els.factResolution.textContent = formatResolution();
     if (state.videoUrl) els.factStatus.textContent = "待评估";
   });
 
@@ -315,9 +334,16 @@ function wireEvents() {
     });
   });
 
-  [els.userPrompt, els.title, els.artist, els.style, els.lyrics, els.continuityNotes, els.hasLipSync, els.hasLyrics].forEach((control) => {
+  [els.userPrompt, els.title, els.artist, els.style, els.lyrics, els.hasLipSync, els.hasLyrics].forEach((control) => {
     control.addEventListener("input", updateRunState);
     control.addEventListener("change", updateRunState);
+  });
+
+  els.downloadHistory.addEventListener("click", downloadHistoryCsv);
+  els.clearHistory.addEventListener("click", () => {
+    state.history = [];
+    saveHistory();
+    renderHistory();
   });
 
   els.run.addEventListener("click", () => {
@@ -328,7 +354,9 @@ function wireEvents() {
 
     window.setTimeout(() => {
       state.report = buildReport();
+      addHistoryRecord(state.report);
       renderReport(state.report);
+      renderHistory();
       els.factStatus.textContent = "已完成";
       els.run.disabled = false;
       els.run.innerHTML = '<span class="play-symbol" aria-hidden="true"></span>重新评分';
@@ -356,6 +384,8 @@ function loadVideo(file) {
   if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
   state.file = file;
   state.videoUrl = "";
+  state.videoWidth = 0;
+  state.videoHeight = 0;
   state.objectUrl = URL.createObjectURL(file);
   state.report = null;
   els.videoUrl.value = "";
@@ -364,6 +394,7 @@ function loadVideo(file) {
   els.stage.classList.add("has-video");
   els.factName.textContent = file.name;
   els.factSize.textContent = formatBytes(file.size);
+  els.factResolution.textContent = "--";
   els.factDuration.textContent = "--";
   els.factStatus.textContent = "待评估";
   updateRunState();
@@ -384,6 +415,8 @@ function loadVideoUrl(url) {
   state.videoUrl = url;
   state.objectUrl = "";
   state.duration = 0;
+  state.videoWidth = 0;
+  state.videoHeight = 0;
   state.report = null;
 
   els.preview.src = url;
@@ -391,6 +424,7 @@ function loadVideoUrl(url) {
   els.stage.classList.add("has-video");
   els.factName.textContent = shortUrl(url);
   els.factSize.textContent = "在线链接";
+  els.factResolution.textContent = "--";
   els.factDuration.textContent = "--";
   els.factStatus.textContent = "已识别链接";
   updateRunState();
@@ -399,12 +433,15 @@ function loadVideoUrl(url) {
 function clearVideoSource() {
   state.videoUrl = "";
   state.duration = 0;
+  state.videoWidth = 0;
+  state.videoHeight = 0;
   state.report = null;
   els.preview.removeAttribute("src");
   els.preview.load();
   els.stage.classList.remove("has-video");
   els.factName.textContent = "未上传";
   els.factSize.textContent = "--";
+  els.factResolution.textContent = "--";
   els.factDuration.textContent = "--";
   els.factStatus.textContent = "待评估";
   updateRunState();
@@ -425,7 +462,6 @@ function buildReport() {
     videoUrl: state.videoUrl ? [state.videoUrl, Math.round(state.duration)] : [],
     prompt: inputs.prompt,
     lyrics: inputs.lyrics,
-    continuityNotes: inputs.continuityNotes,
     storyboard: inputs.storyboardAssets,
     style: els.style.value
   }));
@@ -443,6 +479,8 @@ function buildReport() {
     title,
     artist,
     fileName: sourceName() || "未上传",
+    videoLink: state.videoUrl,
+    resolution: formatResolution(),
     duration: state.duration,
     inputs,
     finalOverall,
@@ -466,17 +504,9 @@ function evaluateVideo(seed, inputs) {
     if (standard.skipWhen && skipState[standard.skipWhen]) {
       return evaluationFromStandard(standard, "N/A", standard.skipText, null);
     }
-    if (standard.key === "continuity" && hasContinuityIssue(inputs.continuityNotes)) {
-      return evaluationFromStandard(
-        standard,
-        "不通过 X",
-        `主体一致性核查已标注异常：${inputs.continuityNotes}。人物数量、性别或身份发生变化时，跨分镜统一性应直接判为不通过。`,
-        45
-      );
-    }
     const rawScore = videoScoreFor(standard.key, seed, index, inputs);
     const level = levelFromScore(rawScore);
-    return evaluationFromStandard(standard, level, copyForLevel(standard, level), rawScore);
+    return evaluationFromStandard(standard, level, copyForVideoLevel(standard, level, inputs), rawScore);
   });
 }
 
@@ -508,9 +538,11 @@ function videoScoreFor(key, seed, index, inputs) {
     concept: { cameraLanguage: 6, clarity: 3 }
   };
   const styleBonus = styleMap[els.style.value]?.[key] || 0;
+  if (key === "clarity") {
+    return clarityScoreFor(variation);
+  }
   if (key === "continuity") {
-    const continuityEvidenceBonus = Math.min(6, inputs.characterAssets.length * 2 + (inputs.prompt.length >= 20 ? 2 : 0));
-    return clampHiddenScore(56 + continuityEvidenceBonus + variation);
+    return continuityScoreFor(inputs, variation);
   }
   return clampHiddenScore(66 + durationFit + promptBonus + referenceBonus + styleBonus + variation);
 }
@@ -557,6 +589,12 @@ function copyForLevel(standard, level) {
   if (level === "通过 ✓") return standard.pass;
   if (level === "不通过 X") return standard.fail;
   return standard.skipText || "此项跳过。";
+}
+
+function copyForVideoLevel(standard, level, inputs) {
+  if (standard.key === "clarity") return clarityCopyFor(level);
+  if (standard.key === "continuity") return continuityCopyFor(level, inputs);
+  return copyForLevel(standard, level);
 }
 
 function aggregateLevel(evaluations) {
@@ -659,7 +697,6 @@ function getInputs() {
   return {
     prompt: els.userPrompt.value.trim(),
     lyrics: els.lyrics.value.trim(),
-    continuityNotes: els.continuityNotes.value.trim(),
     characterUrls,
     backgroundUrls,
     styleUrls,
@@ -668,6 +705,10 @@ function getInputs() {
     backgroundFiles: [...state.assetObjectUrls.background],
     styleFiles: [...state.assetObjectUrls.style],
     storyboardFiles: [...state.assetObjectUrls.storyboard],
+    characterFileNames: [...state.assetFileNames.character],
+    backgroundFileNames: [...state.assetFileNames.background],
+    styleFileNames: [...state.assetFileNames.style],
+    storyboardFileNames: [...state.assetFileNames.storyboard],
     characterAssets: [...characterUrls, ...state.assetObjectUrls.character],
     backgroundAssets: [...backgroundUrls, ...state.assetObjectUrls.background],
     styleAssets: [...styleUrls, ...state.assetObjectUrls.style],
@@ -675,11 +716,61 @@ function getInputs() {
   };
 }
 
-function hasContinuityIssue(value) {
-  const text = value.trim();
-  if (!text) return false;
-  const issuePattern = /(变成|变为|变了|换成|替换|不一致|不统一|突变|消失|少了|多了|男.*女|女.*男|两男一女|三男|三个男|两个男|一女|人数|数量|性别|身份|主角|服装|发型)/;
-  return issuePattern.test(text);
+function clarityScoreFor(variation) {
+  const shortEdge = state.videoWidth && state.videoHeight ? Math.min(state.videoWidth, state.videoHeight) : 0;
+  const longEdge = state.videoWidth && state.videoHeight ? Math.max(state.videoWidth, state.videoHeight) : 0;
+  const boundedVariation = Math.max(-4, Math.min(5, variation));
+
+  if (shortEdge >= 1080 || longEdge >= 1920) {
+    return clampHiddenScore(84 + boundedVariation);
+  }
+  if (shortEdge >= 720 || longEdge >= 1280) {
+    return clampHiddenScore(74 + boundedVariation);
+  }
+  if (shortEdge || longEdge) {
+    return clampHiddenScore(54 + Math.max(-4, Math.min(4, variation)));
+  }
+
+  return clampHiddenScore(72 + Math.max(-3, Math.min(4, variation)));
+}
+
+function clarityCopyFor(level) {
+  const resolution = formatResolution();
+  const hasResolution = resolution !== "--";
+  if (level === "优秀 ★") {
+    return hasResolution
+      ? `系统读取到视频分辨率为 ${resolution}，达到 1080p 及以上清晰度标准，主体、面部、字幕和关键动作具备稳定可辨认基础。`
+      : "系统未读取到明确分辨率，但可播放视频未触发低清判定，按整体清晰稳定性进入优秀档。";
+  }
+  if (level === "通过 ✓") {
+    return hasResolution
+      ? `系统读取到视频分辨率为 ${resolution}，达到 720p 基础清晰度标准，主体、面部、字幕和关键动作可支撑正常观看。`
+      : "系统未读取到明确分辨率，按可播放视频的基础清晰度进入通过档。";
+  }
+  return hasResolution
+    ? `系统读取到视频分辨率为 ${resolution}，低于 720p 基础清晰度标准，主体、面部、字幕或关键动作存在不可辨认风险。`
+    : "系统未能读取到稳定画面信息，清晰度无法满足基础评估标准。";
+}
+
+function continuityScoreFor(inputs, variation) {
+  const referenceStrength = Math.min(10, inputs.characterAssets.length * 3 + inputs.storyboardAssets.length + (inputs.prompt.length >= 20 ? 2 : 0));
+  const missingReferencePenalty = inputs.characterAssets.length ? 0 : -8;
+  return clampHiddenScore(61 + referenceStrength + missingReferencePenalty + variation);
+}
+
+function continuityCopyFor(level, inputs) {
+  const hasCharacterReference = inputs.characterAssets.length > 0;
+  const hasStoryboard = inputs.storyboardAssets.length > 0;
+  if (level === "优秀 ★") {
+    return "系统自动比对人物数量、形象特征、服装发型、主体身份和分镜间画面延续性，未发现明显主体替换或风格断裂，跨分镜统一性达到优秀档。";
+  }
+  if (level === "通过 ✓") {
+    return "系统自动比对主要人物组合、主体身份、造型线索和分镜衔接关系，整体保持一致，存在轻微差异但不影响连续观看。";
+  }
+  if (!hasCharacterReference && hasStoryboard) {
+    return "系统自动比对分镜与成片主体线索时缺少明确形象参考，人物数量、身份或造型稳定性不足，跨分镜统一性判为不通过。";
+  }
+  return "系统自动比对人物数量、性别/身份、服装发型、背景风格和构图延续性，发现主体或风格存在明显断裂风险，跨分镜统一性判为不通过。";
 }
 
 function updateAssetFiles(input) {
@@ -688,6 +779,9 @@ function updateAssetFiles(input) {
   state.assetObjectUrls[key] = Array.from(input.files || [])
     .filter((file) => file.type.startsWith("image/"))
     .map((file) => URL.createObjectURL(file));
+  state.assetFileNames[key] = Array.from(input.files || [])
+    .filter((file) => file.type.startsWith("image/"))
+    .map((file) => file.name);
 }
 
 function assetKeyFromInput(id) {
@@ -779,6 +873,173 @@ function renderList(target, items) {
   target.innerHTML = items.map((item) => `<li>${item}</li>`).join("");
 }
 
+function loadHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(historyStorageKey) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory() {
+  localStorage.setItem(historyStorageKey, JSON.stringify(state.history));
+}
+
+function addHistoryRecord(report) {
+  const record = historyRecordFromReport(report);
+  state.history = [record, ...state.history].slice(0, 200);
+  saveHistory();
+}
+
+function historyRecordFromReport(report) {
+  return {
+    id: `${Date.now()}-${hash(report.fileName + report.title)}`,
+    reviewedAt: new Date().toISOString(),
+    title: report.title,
+    artist: report.artist,
+    videoName: report.fileName,
+    videoLink: report.videoLink || "",
+    videoResolution: report.resolution || "--",
+    videoDuration: formatDuration(report.duration),
+    videoOverall: report.videoOverall,
+    storyboardOverall: report.storyboardOverall,
+    userPrompt: report.inputs.prompt,
+    lyrics: report.inputs.lyrics,
+    characterAssets: assetSummary(report.inputs.characterUrls, report.inputs.characterFileNames),
+    backgroundAssets: assetSummary(report.inputs.backgroundUrls, report.inputs.backgroundFileNames),
+    styleAssets: assetSummary(report.inputs.styleUrls, report.inputs.styleFileNames),
+    storyboardAssets: assetSummary(report.inputs.storyboardUrls, report.inputs.storyboardFileNames),
+    videoEvaluations: report.videoEvaluations.map(historyEvaluation),
+    storyboardEvaluations: report.storyboardEvaluations.map(historyEvaluation)
+  };
+}
+
+function historyEvaluation(item) {
+  return {
+    key: item.key,
+    label: item.label,
+    result: item.level,
+    reason: item.copy
+  };
+}
+
+function assetSummary(urls, fileNames) {
+  const parts = [];
+  if (urls?.length) parts.push(`地址: ${urls.join(" | ")}`);
+  if (fileNames?.length) parts.push(`本地上传: ${fileNames.join(" | ")}`);
+  return parts.join("；");
+}
+
+function renderHistory() {
+  if (!els.historyList) return;
+  els.downloadHistory.disabled = state.history.length === 0;
+  els.clearHistory.disabled = state.history.length === 0;
+  els.historyList.innerHTML = state.history.length
+    ? state.history.map(renderHistoryRow).join("")
+    : `<div class="history-empty">暂无评审记录</div>`;
+}
+
+function renderHistoryRow(record) {
+  return `
+    <article class="history-row">
+      <div>
+        <strong>${escapeHtml(record.videoName || "未命名视频")}</strong>
+        <span>${formatHistoryTime(record.reviewedAt)}</span>
+      </div>
+      <div>
+        <small>视频评估</small>
+        <em class="level-pill">${escapeHtml(record.videoOverall)}</em>
+      </div>
+      <div>
+        <small>分镜图评估</small>
+        <em class="level-pill">${escapeHtml(record.storyboardOverall)}</em>
+      </div>
+    </article>
+  `;
+}
+
+function downloadHistoryCsv() {
+  if (!state.history.length) return;
+  const csv = historyToCsv(state.history);
+  const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `mv-review-history-${dateStamp()}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function historyToCsv(records) {
+  const columns = [
+    ["reviewedAt", "评估时间"],
+    ["title", "MV标题"],
+    ["artist", "艺人/团队"],
+    ["videoName", "视频名称"],
+    ["videoLink", "视频链接"],
+    ["videoResolution", "视频分辨率"],
+    ["videoDuration", "视频时长"],
+    ["videoOverall", "视频评估结果"],
+    ["storyboardOverall", "分镜图评估结果"],
+    ["userPrompt", "用户Prompt"],
+    ["lyrics", "歌词"],
+    ["characterAssets", "角色/形象"],
+    ["backgroundAssets", "背景"],
+    ["styleAssets", "风格"],
+    ["storyboardAssets", "分镜图"]
+  ];
+
+  completeVideoStandards.forEach((standard) => {
+    columns.push([`video:${standard.key}:result`, `视频-${standard.label}-结果`]);
+    columns.push([`video:${standard.key}:reason`, `视频-${standard.label}-原因`]);
+  });
+  storyboardStandards.forEach((standard) => {
+    columns.push([`storyboard:${standard.key}:result`, `分镜图-${standard.label}-结果`]);
+    columns.push([`storyboard:${standard.key}:reason`, `分镜图-${standard.label}-原因`]);
+  });
+
+  const header = columns.map(([, label]) => csvCell(label)).join(",");
+  const rows = records.map((record) =>
+    columns.map(([key]) => csvCell(valueForHistoryColumn(record, key))).join(",")
+  );
+  return [header, ...rows].join("\r\n");
+}
+
+function valueForHistoryColumn(record, key) {
+  if (key.startsWith("video:")) {
+    return evaluationValue(record.videoEvaluations, key);
+  }
+  if (key.startsWith("storyboard:")) {
+    return evaluationValue(record.storyboardEvaluations, key);
+  }
+  return record[key] || "";
+}
+
+function evaluationValue(items, key) {
+  const [, standardKey, field] = key.split(":");
+  const item = items.find((entry) => entry.key === standardKey);
+  return item ? item[field] || "" : "";
+}
+
+function csvCell(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function formatHistoryTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function dateStamp() {
+  const date = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
 function levelFromScore(score) {
   if (score > 80) return "优秀 ★";
   if (score > 60) return "通过 ✓";
@@ -827,6 +1088,11 @@ function formatDuration(seconds) {
   return `${minutes}:${rest}`;
 }
 
+function formatResolution() {
+  if (!state.videoWidth || !state.videoHeight) return "--";
+  return `${state.videoWidth} × ${state.videoHeight}`;
+}
+
 function formatBytes(bytes) {
   if (!bytes) return "--";
   const units = ["B", "KB", "MB", "GB"];
@@ -841,4 +1107,13 @@ function formatBytes(bytes) {
 
 function escapeAttribute(value) {
   return value.replace(/"/g, "&quot;");
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }

@@ -20,6 +20,7 @@
           <button class="view-tab is-active" type="button" data-view-target="studio">评估台</button>
           <button class="view-tab" type="button" data-view-target="standards">评估标准</button>
           <button class="view-tab" type="button" data-view-target="report">报告页</button>
+          <button class="view-tab" type="button" data-view-target="history">评审历史</button>
         </nav>
       </header>
 
@@ -132,10 +133,6 @@
                   <span>歌词（非必填）</span>
                   <textarea id="lyricsText" rows="5" placeholder="可填写歌词或关键歌词段落，用于分镜图的歌词呼应度评估"></textarea>
                 </label>
-                <label class="wide-field">
-                  <span>主体一致性核查（非必填）</span>
-                  <textarea id="continuityNotes" rows="4" placeholder="如发现人物数量、性别、服装、发型、身份或主角发生变化，可填写：前面三个男生，最后变成两男一女"></textarea>
-                </label>
               </div>
 
               <fieldset class="review-switches">
@@ -162,6 +159,10 @@
                 <div>
                   <dt>大小</dt>
                   <dd id="factSize">--</dd>
+                </div>
+                <div>
+                  <dt>分辨率</dt>
+                  <dd id="factResolution">--</dd>
                 </div>
                 <div>
                   <dt>状态</dt>
@@ -281,6 +282,22 @@
                 <div class="timeline" id="timelineList"></div>
               </section>
             </div>
+          </div>
+        </section>
+
+        <section class="view-panel" data-view="history" aria-labelledby="history-title">
+          <div class="history-layout">
+            <header class="standards-hero history-hero">
+              <div>
+                <p class="eyebrow">Review Archive</p>
+                <h2 id="history-title">评审历史</h2>
+              </div>
+              <div class="history-actions">
+                <button class="secondary-action" id="downloadHistory" type="button">下载 CSV</button>
+                <button class="secondary-action danger" id="clearHistory" type="button">清空记录</button>
+              </div>
+            </header>
+            <div class="history-list" id="historyList"></div>
           </div>
         </section>
       </main>
